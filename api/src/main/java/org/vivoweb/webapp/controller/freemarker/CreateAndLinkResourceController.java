@@ -29,6 +29,8 @@ import edu.cornell.mannlib.vitro.webapp.rdfservice.RDFServiceException;
 import edu.cornell.mannlib.vitro.webapp.rdfservice.ResultSetConsumer;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.jena.query.QuerySolution;
 import org.apache.jena.rdf.model.Literal;
 import org.apache.jena.rdf.model.Model;
@@ -80,8 +82,12 @@ import java.util.Set;
  */
 @WebServlet(name = "CreateAndLinkResource", urlPatterns = {"/createAndLink/*"} )
 public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
-    // Must be able to edit your own account to claim publications
+    private static final String NOTMINE_RELATIONSHIP = "notmine";
+	private static final String EDITOR_RELATIONSHIP = "editor";
+	private static final String AUTHOR_RELATIONSHIP = "author";
+	// Must be able to edit your own account to claim publications
     public static final AuthorizationRequest REQUIRED_ACTIONS = SimplePermission.EDIT_OWN_ACCOUNT.ACTION;
+	private Log log = LogFactory.getLog(this.getClass());
 
     // Mappings for publication type to ontology types / classes
     private static final Map<String, String> typeToClassMap = new HashMap<>();
@@ -134,6 +140,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
     public static final String VIVO_RANK = "http://vivoweb.org/ontology/core#rank";
     public static final String VIVO_RELATEDBY = "http://vivoweb.org/ontology/core#relatedBy";
     public static final String VIVO_RELATES = "http://vivoweb.org/ontology/core#relates";
+    public static final String VIVO_REJECTED_DOI = "http://vivoweb.org/ontology/core#rejectedDoi";
 
     public static final String VCARD_FAMILYNAME = "http://www.w3.org/2006/vcard/ns#familyName";
     public static final String VCARD_GIVENNAME = "http://www.w3.org/2006/vcard/ns#givenName";
@@ -348,49 +355,14 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
 
                     // Ensure that we have an ID
                     if (!StringUtils.isEmpty(externalId)) {
-                        // Check that the user is claiming a relationship to the resource
-                        if (!"notmine".equalsIgnoreCase(vreq.getParameter("contributor" + externalId))) {
-                            // If we are processing a resource that is already in VIVO, get the Vivo URI from the form
-                            String vivoUri = vreq.getParameter("vivoUri" + externalId);
-
-                            // If we don't already know that the resource has been created in VIVO
-                            if (StringUtils.isEmpty(vivoUri)) {
-                                // Check that it hasn't been created since when we first rendered the page
-                                ExternalIdentifiers allExternalIds = provider.allExternalIDsForFind(externalId);
-                                vivoUri = findInVIVO(vreq, allExternalIds, profileUri, null);
-                            }
-
-                            // If we haven't got an existing VIVO resource by this point, create it
-                            if (StringUtils.isEmpty(vivoUri)) {
-                                ResourceModel resourceModel = null;
-
-                                // Get the publication type from the form
-                                String typeUri = vreq.getParameter("type" + externalId);
-
-                                // Get the appropriate resource provider for the external ID from the form
-                                String resourceProvider = vreq.getParameter("externalProvider" + externalId);
-
-                                // Get an intermediate ResourceModel from the provider
-                                if (providers.containsKey(resourceProvider)) {
-                                    resourceModel = providers.get(resourceProvider).makeResourceModel(externalId, vreq.getParameter("externalResource" + externalId));
-                                } else {
-                                    resourceModel = provider.makeResourceModel(externalId, vreq.getParameter("externalResource" + externalId));
-                                }
-
-                                // If we have an intermediate model, create the VIVO representation from the model
-                                if (resourceModel != null) {
-                                    vivoUri = createVIVOObject(vreq, updatedModel, resourceModel, typeUri);
-                                }
-                            } else {
-                                // Get the existing statements for the model, and add them to the both in-memory models
-                                Model existingResourceModel = getExistingResource(vreq, vivoUri);
-                                existingModel.add(existingResourceModel);
-                                updatedModel.add(existingResourceModel);
-                            }
-
+                    	if ("notmine".equalsIgnoreCase(getClaimType(vreq, externalId))) {
+                    		createNotRelatesRelationship(vreq, updatedModel, profileUri, externalId);
+                    	} else {
+                        	// If we are processing a resource that is already in VIVO, get the Vivo URI from the form
+                            String vivoUri = getVivoUri(vreq, externalId, provider, profileUri, updatedModel, existingModel);
                             // Process the user's chosen relationship with the resource, updating the updated model
-                            processRelationships(vreq, updatedModel, vivoUri, profileUri, vreq.getParameter("contributor" + externalId));
-                        }
+                            processRelationships(vreq, updatedModel, vivoUri, profileUri, externalId);
+                    	}
                     }
                 }
 
@@ -519,6 +491,50 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
         // Show the entry form for a user to enter a set of identifiers
         return new TemplateResponseValues("createAndLinkResourceEnterID.ftl", templateValues);
     }
+
+	private String getClaimType(VitroRequest vreq, String externalId) {
+		return vreq.getParameter("contributor" + externalId);
+	}
+
+	private String getVivoUri(VitroRequest vreq, String externalId, CreateAndLinkResourceProvider provider, String profileUri, Model updatedModel, Model existingModel) {
+		String vivoUri = vreq.getParameter("vivoUri" + externalId);
+		// If we don't already know that the resource has been created in VIVO
+        if (StringUtils.isEmpty(vivoUri)) {
+            // Check that it hasn't been created since when we first rendered the page
+            ExternalIdentifiers allExternalIds = provider.allExternalIDsForFind(externalId);
+            vivoUri = findInVIVO(vreq, allExternalIds, profileUri, null);
+        }
+        
+        // If we haven't got an existing VIVO resource by this point, create it
+        if (StringUtils.isEmpty(vivoUri)) {
+            ResourceModel resourceModel = null;
+
+            // Get the publication type from the form
+            String typeUri = vreq.getParameter("type" + externalId);
+
+            // Get the appropriate resource provider for the external ID from the form
+            String resourceProvider = vreq.getParameter("externalProvider" + externalId);
+
+            // Get an intermediate ResourceModel from the provider
+            if (providers.containsKey(resourceProvider)) {
+                resourceModel = providers.get(resourceProvider).makeResourceModel(externalId, vreq.getParameter("externalResource" + externalId));
+            } else {
+                resourceModel = provider.makeResourceModel(externalId, vreq.getParameter("externalResource" + externalId));
+            }
+
+            // If we have an intermediate model, create the VIVO representation from the model
+            if (resourceModel != null) {
+                vivoUri = createVIVOObject(vreq, updatedModel, resourceModel, typeUri);
+            }
+        } else {
+            // Get the existing statements for the model, and add them to the both in-memory models
+            Model existingResourceModel = getExistingResource(vreq, vivoUri);
+            existingModel.add(existingResourceModel);
+            updatedModel.add(existingResourceModel);
+        }
+ 
+		return vivoUri;
+	}
 
     private String getFormattedProfileName(VitroRequest vreq, String profileUri) {
         final Citation.Name name = new Citation.Name();
@@ -750,6 +766,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
 
             vreq.getRDFService().sparqlConstructQuery(query, model);
         } catch (RDFServiceException e) {
+        	log.error(e, e);
         }
 
         return model;
@@ -761,53 +778,66 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
      * @param vreq
      * @param model
      * @param vivoUri
-     * @param userUri
+     * @param profileUri
      * @param relationship
      */
-    protected void processRelationships(VitroRequest vreq, Model model, String vivoUri, String userUri, String relationship) {
+    protected void processRelationships(VitroRequest vreq, Model model, String vivoUri, String profileUri, String externalId) {
+    	String relationship = getClaimType(vreq, externalId);
         if (relationship != null) {
             // If authorship is being claimed
-            if (relationship.startsWith("author")) {
-                // Create an authorship context object
-                Resource authorship = model.createResource(getUnusedUri(vreq));
-                authorship.addProperty(RDF.type, model.getResource(VIVO_AUTHORSHIP));
-
-                // Add the resource and the user as relates predicates of the context
-                authorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(vivoUri));
-                authorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(userUri));
-
-                // Add related by predicates to the user and resource, linking to the context
-                model.getResource(vivoUri).addProperty(model.createProperty(VIVO_RELATEDBY), authorship);
-                model.getResource(userUri).addProperty(model.createProperty(VIVO_RELATEDBY), authorship);
-
-                // If the relationship contains an author position
-                if (relationship.length() > 6) {
-                    // Parse out the author position to a numeric rank
-                    String posStr = relationship.substring(6);
-                    int rank = Integer.parseInt(posStr, 10);
-                    // Remove an existing authorship at that rank
-                    removeAuthorship(vreq, model, vivoUri, rank);
-                    try {
-                        // Add the chosen rank to the authorship context created
-                        authorship.addLiteral(model.createProperty(VIVO_RANK), rank);
-                    } catch (NumberFormatException nfe) {
-                    }
-                }
-            } else if (relationship.startsWith("editor")) {
-                // User is claiming editorship
-                Resource editorship = model.createResource(getUnusedUri(vreq));
-                editorship.addProperty(RDF.type, model.getResource(VIVO_EDITORSHIP));
-
-                // Add the resource and the user as relates predicates of the context
-                editorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(vivoUri));
-                editorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(userUri));
-
-                // Add related by predicates to the user and resource, linking to the context
-                model.getResource(vivoUri).addProperty(model.createProperty(VIVO_RELATEDBY), editorship);
-                model.getResource(userUri).addProperty(model.createProperty(VIVO_RELATEDBY), editorship);
-            }
+            if (relationship.startsWith(AUTHOR_RELATIONSHIP)) {
+                createAuthorRelationship(vreq, model, vivoUri, profileUri, relationship);
+            } else if (relationship.startsWith(EDITOR_RELATIONSHIP)) {
+                createEditorRealationship(vreq, model, vivoUri, profileUri);
+            } 
         }
     }
+    
+	private void createNotRelatesRelationship(VitroRequest vreq, Model model, String userUri, String externalId) {
+		model.add(model.getResource(userUri), model.getProperty(VIVO_REJECTED_DOI), externalId);
+	}
+
+	private void createAuthorRelationship(VitroRequest vreq, Model model, String vivoUri, String userUri, String relationship) {
+		// Create an authorship context object
+		Resource authorship = model.createResource(getUnusedUri(vreq));
+		authorship.addProperty(RDF.type, model.getResource(VIVO_AUTHORSHIP));
+
+		// Add the resource and the user as relates predicates of the context
+		authorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(vivoUri));
+		authorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(userUri));
+
+		// Add related by predicates to the user and resource, linking to the context
+		model.getResource(vivoUri).addProperty(model.createProperty(VIVO_RELATEDBY), authorship);
+		model.getResource(userUri).addProperty(model.createProperty(VIVO_RELATEDBY), authorship);
+
+		// If the relationship contains an author position
+		if (relationship.length() > 6) {
+		    // Parse out the author position to a numeric rank
+		    String posStr = relationship.substring(6);
+		    int rank = Integer.parseInt(posStr, 10);
+		    // Remove an existing authorship at that rank
+		    removeAuthorship(vreq, model, vivoUri, rank);
+		    try {
+		        // Add the chosen rank to the authorship context created
+		        authorship.addLiteral(model.createProperty(VIVO_RANK), rank);
+		    } catch (NumberFormatException nfe) {
+		    }
+		}
+	}
+
+	private void createEditorRealationship(VitroRequest vreq, Model model, String vivoUri, String userUri) {
+		// User is claiming editorship
+		Resource editorship = model.createResource(getUnusedUri(vreq));
+		editorship.addProperty(RDF.type, model.getResource(VIVO_EDITORSHIP));
+
+		// Add the resource and the user as relates predicates of the context
+		editorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(vivoUri));
+		editorship.addProperty(model.createProperty(VIVO_RELATES), model.getResource(userUri));
+
+		// Add related by predicates to the user and resource, linking to the context
+		model.getResource(vivoUri).addProperty(model.createProperty(VIVO_RELATEDBY), editorship);
+		model.getResource(userUri).addProperty(model.createProperty(VIVO_RELATEDBY), editorship);
+	}
 
     /**
      * Removes an existing authorship at a given position, when that position is claimed by the author
@@ -1250,6 +1280,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
         try {
             return uriMaker.getUnusedNewURI(null);
         } catch (InsertException e) {
+        	log.error(e, e);
         }
 
         return null;

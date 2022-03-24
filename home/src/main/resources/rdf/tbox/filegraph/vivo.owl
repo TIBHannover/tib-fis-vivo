@@ -4802,6 +4802,12 @@ use one freetextKeyword assertion for each keyword or phrase.</obo:IAO_0000112>
         <rdfs:label xml:lang="en">sponsor award ID</rdfs:label>
         <obo:IAO_0000112 rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Has a domain of Grant. There is not a strong reason have this be publically visible, since most users would care more about the name of the sponsoring agency than its identifier, but it does no harm to be public.
 
+    <!-- http://vivoweb.org/ontology/core#rejectedDOI -->
+
+    <owl:DatatypeProperty rdf:about="http://vivoweb.org/ontology/core#rejectedDoi">
+        <rdfs:label xml:lang="en">Rejected DOI</rdfs:label>
+    </owl:DatatypeProperty>
+
 
 See also core:localAwardId.
 </obo:IAO_0000112>
