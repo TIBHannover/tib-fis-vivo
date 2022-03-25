@@ -82,9 +82,9 @@ import java.util.Set;
  */
 @WebServlet(name = "CreateAndLinkResource", urlPatterns = {"/createAndLink/*"} )
 public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
-    private static final String NOTMINE_RELATIONSHIP = "notmine";
-	private static final String EDITOR_RELATIONSHIP = "editor";
-	private static final String AUTHOR_RELATIONSHIP = "author";
+    private static final String NOT_MINE = "notmine";
+	private static final String EDITOR = "editor";
+	private static final String AUTHOR = "author";
 	// Must be able to edit your own account to claim publications
     public static final AuthorizationRequest REQUIRED_ACTIONS = SimplePermission.EDIT_OWN_ACCOUNT.ACTION;
 	private Log log = LogFactory.getLog(this.getClass());
@@ -355,7 +355,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
 
                     // Ensure that we have an ID
                     if (!StringUtils.isEmpty(externalId)) {
-                    	if ("notmine".equalsIgnoreCase(getClaimType(vreq, externalId))) {
+                    	if (NOT_MINE.equalsIgnoreCase(getClaimType(vreq, externalId))) {
                     		createNotRelatesRelationship(vreq, updatedModel, profileUri, externalId);
                     	} else {
                         	// If we are processing a resource that is already in VIVO, get the Vivo URI from the form
@@ -782,12 +782,12 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
      * @param relationship
      */
     protected void processRelationships(VitroRequest vreq, Model model, String vivoUri, String profileUri, String externalId) {
-    	String relationship = getClaimType(vreq, externalId);
-        if (relationship != null) {
+    	String claim = getClaimType(vreq, externalId);
+        if (claim != null) {
             // If authorship is being claimed
-            if (relationship.startsWith(AUTHOR_RELATIONSHIP)) {
-                createAuthorRelationship(vreq, model, vivoUri, profileUri, relationship);
-            } else if (relationship.startsWith(EDITOR_RELATIONSHIP)) {
+            if (claim.startsWith(AUTHOR)) {
+                createAuthorRelationship(vreq, model, vivoUri, profileUri, claim);
+            } else if (claim.startsWith(EDITOR)) {
                 createEditorRealationship(vreq, model, vivoUri, profileUri);
             } 
         }
@@ -811,16 +811,17 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
 		model.getResource(userUri).addProperty(model.createProperty(VIVO_RELATEDBY), authorship);
 
 		// If the relationship contains an author position
-		if (relationship.length() > 6) {
+		if (relationship.length() > AUTHOR.length()) {
 		    // Parse out the author position to a numeric rank
-		    String posStr = relationship.substring(6);
-		    int rank = Integer.parseInt(posStr, 10);
-		    // Remove an existing authorship at that rank
-		    removeAuthorship(vreq, model, vivoUri, rank);
+		    String posStr = relationship.substring(AUTHOR.length());
 		    try {
+		    	int rank = Integer.parseInt(posStr, 10);
+			    // Remove an existing authorship at that rank
+			    removeAuthorship(vreq, model, vivoUri, rank);
 		        // Add the chosen rank to the authorship context created
 		        authorship.addLiteral(model.createProperty(VIVO_RANK), rank);
 		    } catch (NumberFormatException nfe) {
+		    	log.error(nfe, nfe);
 		    }
 		}
 	}
