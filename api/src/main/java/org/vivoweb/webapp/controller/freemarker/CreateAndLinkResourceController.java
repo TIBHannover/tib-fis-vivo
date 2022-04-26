@@ -298,13 +298,14 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
             }
         }
 
+
         // If we still haven't got a person, return an error to the user
-        if (person == null) {
+        if (person == null && !hasBackendEditing(vreq)) {
             return new TemplateResponseValues("unknownProfile.ftl");
         }
 
         // If the profile isn't associated with the logged in user
-        if (!isProfileUriForLoggedIn) {
+        if (!isProfileUriForLoggedIn && !hasBackendEditing(vreq)) {
             // Check that we have back end editing priveleges
             if (!PolicyHelper.isAuthorizedForActions(vreq, SimplePermission.DO_BACK_END_EDITING.ACTION)) {
                 // If all else fails, can we add statements to this individual?
@@ -328,6 +329,9 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
         templateValues.put("profileUri", profileUri);
         templateValues.put("personLabel",    person.getRdfsLabel());
         templateValues.put("personThumbUrl", person.getThumbUrl());
+        templateValues.put("hasBackendEditing", hasBackendEditing(vreq));
+        templateValues.put("linkAuthors", getLinkAuthors(vreq));
+        
 
         // Get the requested action (e.g. find, confirm)
         String action = vreq.getParameter("action");
@@ -361,7 +365,9 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
                         	// If we are processing a resource that is already in VIVO, get the Vivo URI from the form
                             String vivoUri = getVivoUri(vreq, externalId, provider, profileUri, updatedModel, existingModel);
                             // Process the user's chosen relationship with the resource, updating the updated model
-                            processRelationships(vreq, updatedModel, vivoUri, profileUri, externalId);
+                            if (getLinkAuthors(vreq)) {
+                            	processRelationships(vreq, updatedModel, vivoUri, profileUri, externalId);
+                            }
                     	}
                     }
                 }
@@ -535,7 +541,17 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
  
 		return vivoUri;
 	}
+	
+	private boolean hasBackendEditing(VitroRequest vreq) {
+		return PolicyHelper.isAuthorizedForActions(vreq, SimplePermission.DO_BACK_END_EDITING.ACTION);
+	}
 
+	private boolean getLinkAuthors(VitroRequest vreq) {
+		if ("false".equalsIgnoreCase(vreq.getParameter("linkAuthors"))) {
+			return false;
+		}
+		return true;
+	}
     private String getFormattedProfileName(VitroRequest vreq, String profileUri) {
         final Citation.Name name = new Citation.Name();
 
@@ -1667,7 +1683,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
                                 // If we've got an author
                                 if (personResource != null) {
                                     // If the author is the user, then they have already claimed this publication
-                                    if (profileUri.equals(personResource.getURI())) {
+                                    if (profileUri.equals(personResource.getURI()) && !getLinkAuthors(vreq)) {
                                         citation.alreadyClaimed = true;
                                     }
 
