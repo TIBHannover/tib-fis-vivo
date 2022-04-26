@@ -1,6 +1,12 @@
+<#if !linkAuthors?has_content>
+	<#assign linkAuthors=true />
+</#if>
+<#if !hasBackendEditing?has_content>
+	<#assign hasBackendEditing=false />
+</#if>
 <#setting number_format="computer">
 <form id="createAndLink" method="post">
-    <#if personLabel??>
+    <#if linkAuthors!=false && personLabel??>
         <div class="claim-for">
             <h3>${i18n().create_and_link_claim_for(personLabel)}</h3>
             <#if personThumbUrl??>
@@ -16,14 +22,16 @@
     <div class="description">${i18n().create_and_link_editors_desc}</div><br /><br />
     ${i18n().create_and_link_not_mine_desc}<br /><br />
     <#list citations as citation>
-        <div class="entryId">
-            <#if citation.externalProvider??>
+        <#if citation.externalProvider??>
+            <div class="entryId">
                 ${citation.externalProvider?upper_case}: ${citation.externalId?html}
-            <#else>
-                ID: ${citation.externalId?html}
-            </#if>
-        </div>
-        <#if citation.type?has_content>
+            </div>
+        </#if>
+        <#if citation.vivoUri??>
+            <#list publicationTypes as publicationType>
+                <#if publicationType.uri == citation.typeUri>${publicationType.label}</#if>
+            </#list>
+        <#elseif citation.type?has_content>
             <select name="type${citation.externalId}">
                 <#list publicationTypes as publicationType>
                     <option value="${publicationType.uri}" <#if publicationType.uri == citation.typeUri>selected</#if>>${publicationType.label}</option>
@@ -63,9 +71,13 @@
                                     <#else>
                                         <#if author.name??>
                                             <#if !author.linked>
-                                                <input type="radio" id="author${citation.externalId}-${author?counter}" name="contributor${citation.externalId}" value="author${author?counter}" <#if author.proposed>checked</#if> class="radioWithLabel" />
-                                                <label for="author${citation.externalId}-${author?counter}" class="labelForRadio">${author.name!?html}</label>
-                                                <#if author.proposed><#assign proposedAuthor=true /></#if>
+                                                <#if linkAuthors=false>
+                                                    <span class="linked">${author.name!?html}</span>
+                                                <#else>
+                                                    <input type="radio" id="author${citation.externalId}-${author?counter}" name="contributor${citation.externalId}" value="author${author?counter}" <#if author.proposed>checked</#if> class="radioWithLabel" />
+                                                    <label for="author${citation.externalId}-${author?counter}" class="labelForRadio">${author.name!?html}</label>
+                                                    <#if author.proposed><#assign proposedAuthor=true /></#if>
+                                                </#if>
                                             <#else>
                                                 <span class="linked">${author.name!?html}</span>
                                             </#if>
@@ -80,6 +92,8 @@
 
                 <#if citation.alreadyClaimed>
                     <span class="claimed">${i18n().create_and_link_already_claimed}</span>
+                <#elseif linkAuthors=false>
+                    <input type="checkbox" id="notmine${citation.externalId}" name="contributor${citation.externalId}" value="notmine" class="radioWithLabel" /><label for="notmine${citation.externalId}" class="labelForRadio"> ${i18n().create_and_link_no_import}</label><br />
                 <#else>
                     <input type="radio" id="author${citation.externalId}" name="contributor${citation.externalId}" value="author" <#if !proposedAuthor>checked</#if> class="radioWithLabel" /><label for="author${citation.externalId}" class="labelForRadio"> ${i18n().create_and_link_unlisted_author}</label><br />
                     <input type="radio" id="editor${citation.externalId}" name="contributor${citation.externalId}" value="editor" class="radioWithLabel" /><label for="editor${citation.externalId}" class="labelForRadio"> ${i18n().create_and_link_editor}</label><br />
