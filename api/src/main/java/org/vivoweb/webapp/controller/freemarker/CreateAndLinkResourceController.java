@@ -459,7 +459,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
                             citation.type = typeEntry.getKey();
                         }
                     }
-
+                    citation.typeUri = typeToClassMap.getOrDefault(citation.type, BIBO_ARTICLE);
                     // Guess which author in the available metadata is the user claiming the work
                     proposeAuthorToLink(vreq, citation, profileUri);
 
