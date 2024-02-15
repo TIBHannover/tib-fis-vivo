@@ -22,11 +22,14 @@ import edu.cornell.mannlib.vitro.webapp.dao.IndividualDao;
 import edu.cornell.mannlib.vitro.webapp.dao.InsertException;
 import edu.cornell.mannlib.vitro.webapp.dao.NewURIMakerVitro;
 import edu.cornell.mannlib.vitro.webapp.edit.n3editing.VTwo.N3EditUtils;
+import edu.cornell.mannlib.vitro.webapp.modelaccess.ModelAccess;
 import edu.cornell.mannlib.vitro.webapp.modelaccess.ModelNames;
 import edu.cornell.mannlib.vitro.webapp.rdfservice.ChangeSet;
 import edu.cornell.mannlib.vitro.webapp.rdfservice.RDFService;
 import edu.cornell.mannlib.vitro.webapp.rdfservice.RDFServiceException;
 import edu.cornell.mannlib.vitro.webapp.rdfservice.ResultSetConsumer;
+import edu.cornell.mannlib.vitro.webapp.rdfservice.adapters.VitroModelFactory;
+
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
@@ -387,7 +390,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
                 // Create a holder for statements already in the triple store, and another for the changes
                 Model existingModel = ModelFactory.createDefaultModel();
                 Model updatedModel = ModelFactory.createDefaultModel();
-
+                Model rejectedWorksModel = VitroModelFactory.createModel();
                 // Loop through each external ID that was on the page
                 for (String externalId : externalIds) {
                     // Get the normalized ID from the resource provider
@@ -397,7 +400,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
                     // Ensure that we have an ID
                     if (!StringUtils.isEmpty(externalId)) {
                     	if (NOT_MINE.equalsIgnoreCase(getClaimType(vreq, externalId))) {
-                    		createNotRelatesRelationship(vreq, updatedModel, profileUri, externalId);
+                    		createNotRelatesRelationship(vreq, profileUri, externalId, rejectedWorksModel);
                     	} else {
                         	// If we are processing a resource that is already in VIVO, get the Vivo URI from the form
                             String vivoUri = getVivoUri(vreq, externalId, provider, profileUri, updatedModel, existingModel);
@@ -408,7 +411,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
                     	}
                     }
                 }
-
+                addRejectedWorksToGraph(vreq, rejectedWorksModel);
                 // Finished processing confirmation, write the differences between the existing and updated model
                 writeChanges(vreq.getRDFService(), existingModel, updatedModel, N3EditUtils.getEditorUri(vreq));
             }
@@ -1129,8 +1132,38 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
         }
     }
     
-	private void createNotRelatesRelationship(VitroRequest vreq, Model model, String userUri, String externalId) {
-		model.add(model.getResource(userUri), model.getProperty(VIVO_REJECTED_DOI), externalId);
+	private void createNotRelatesRelationship(VitroRequest vreq, String profileUri, String externalId,
+			Model rejectedWorks) {
+		String workUri = vreq.getParameter("vivoUri" + externalId);
+		if (!StringUtils.isBlank(workUri)) {
+			try {
+				rejectedWorks.add(rejectedWorks.createResource(profileUri),
+						rejectedWorks.getProperty(SuggestionsForUri.VIVO_REJECTED_WORK), rejectedWorks.createResource(workUri));
+			} catch (Exception e) {
+				log.error(e, e);
+			}
+		} else {
+			rejectedWorks.add(rejectedWorks.getResource(profileUri), rejectedWorks.getProperty(VIVO_REJECTED_DOI), externalId);
+		}
+	}
+
+	private void addRejectedWorksToGraph(VitroRequest vreq, Model rejectedWorks) {
+		if (rejectedWorks.isEmpty()) {
+			return;
+		}
+        RDFService rdfService = ModelAccess.on(vreq).getRDFService();
+        ChangeSet changeSet = rdfService.manufactureChangeSet();
+        InputStream addStream = makeN3InputStream(rejectedWorks);
+        changeSet.addAddition(addStream, RDFService.ModelSerializationFormat.N3, "http://vitro.mannlib.cornell.edu/default/user-profile-suggestions");
+        try {
+            rdfService.changeSetUpdate(changeSet);
+        } catch (RDFServiceException e) {
+        	log.error(e, e);
+        } finally {
+            if (addStream != null) {
+                try { addStream.close(); } catch (IOException e) { }
+            }
+        }
 	}
 
 	private void createAuthorRelationship(VitroRequest vreq, Model model, String vivoUri, String userUri, String relationship) {
