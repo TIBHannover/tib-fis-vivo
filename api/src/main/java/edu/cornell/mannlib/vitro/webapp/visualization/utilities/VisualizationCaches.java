@@ -632,6 +632,8 @@ final public class VisualizationCaches {
                                     "  ?authorship a core:Authorship .\n" +
                                     "  ?authorship core:relates ?document .\n" +
                                     "  ?document a <http://purl.obolibrary.org/obo/IAO_0000030> .\n" +
+                                    "  ?document <https://vivo.tib.eu/fis/ontology/tib-vivo#tibPublikation> true .\n" +
+                                    "" +
                                     "}\n";
 
                             final PersonPublicationMaps map = new PersonPublicationMaps();
