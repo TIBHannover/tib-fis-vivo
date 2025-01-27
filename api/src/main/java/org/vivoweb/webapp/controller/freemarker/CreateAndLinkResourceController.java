@@ -2036,7 +2036,7 @@ public class CreateAndLinkResourceController extends FreemarkerHttpServlet {
                                 // If we've got an author
                                 if (personResource != null) {
                                     // If the author is the user, then they have already claimed this publication
-                                    if (profileUri.equals(personResource.getURI()) && !getLinkAuthors(vreq)) {
+                                    if (profileUri.equals(personResource.getURI()) && getLinkAuthors(vreq)) {
                                         citation.alreadyClaimed = true;
                                     }
 
